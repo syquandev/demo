@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { generateExercises, extractTextFromImage, extractTextFromImages } from '../services/gemini';
@@ -14,6 +14,8 @@ const TYPE_LABELS = {
   short_answer: '💬 Trả lời ngắn',
   translation: '🌐 Dịch',
 };
+
+const TYPE_OPTIONS = Object.entries(TYPE_LABELS).map(([value, label]) => ({ value, label }));
 
 export default function TeacherPage() {
   const { apiKey, addExercise, updateExercise, showToast, setRole } = useApp();
@@ -31,12 +33,88 @@ export default function TeacherPage() {
   const [generatedQuestions, setGeneratedQuestions] = useState(editingExercise ? editingExercise.questions : null);
   const [activeTab, setActiveTab] = useState('paste'); // 'paste' | 'upload' | 'ocr'
 
+  // Editing state for individual questions
+  const [editingIndex, setEditingIndex] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+
   // OCR-related state
   const [ocrImages, setOcrImages] = useState([]);
   const [ocrExtracting, setOcrExtracting] = useState(false);
   const [ocrResult, setOcrResult] = useState('');
   const [ocrProgress, setOcrProgress] = useState({ current: 0, total: 0, percent: 0 });
   const fileInputRef = useRef(null);
+
+  // Question editing handlers
+  const startEditQuestion = useCallback((index) => {
+    setEditingIndex(index);
+    setEditForm(JSON.parse(JSON.stringify(generatedQuestions[index])));
+  }, [generatedQuestions]);
+
+  const cancelEditQuestion = useCallback(() => {
+    setEditingIndex(null);
+    setEditForm(null);
+  }, []);
+
+  const saveEditQuestion = useCallback(() => {
+    if (editingIndex === null || !editForm) return;
+    setGeneratedQuestions((prev) => {
+      const updated = [...prev];
+      updated[editingIndex] = editForm;
+      return updated;
+    });
+    setEditingIndex(null);
+    setEditForm(null);
+    showToast('Đã cập nhật câu hỏi!', 'success');
+  }, [editingIndex, editForm, showToast]);
+
+  const deleteQuestion = useCallback((index) => {
+    setGeneratedQuestions((prev) => prev.filter((_, i) => i !== index));
+    if (editingIndex === index) {
+      setEditingIndex(null);
+      setEditForm(null);
+    }
+    showToast('Đã xóa câu hỏi!', 'info');
+  }, [editingIndex, showToast]);
+
+  const updateEditField = useCallback((field, value) => {
+    setEditForm((prev) => ({ ...prev, [field]: value }));
+  }, []);
+
+  const updateEditOption = useCallback((optIndex, value) => {
+    setEditForm((prev) => {
+      const newOptions = [...(prev.options || [])];
+      newOptions[optIndex] = value;
+      return { ...prev, options: newOptions };
+    });
+  }, []);
+
+  const updateEditColumnItem = useCallback((column, itemIndex, value) => {
+    setEditForm((prev) => {
+      const newCol = [...(prev[column] || [])];
+      newCol[itemIndex] = value;
+      return { ...prev, [column]: newCol };
+    });
+  }, []);
+
+  const addEditOption = useCallback(() => {
+    setEditForm((prev) => {
+      const newOptions = [...(prev.options || []), ''];
+      return { ...prev, options: newOptions };
+    });
+  }, []);
+
+  const removeEditOption = useCallback((optIndex) => {
+    setEditForm((prev) => {
+      const newOptions = (prev.options || []).filter((_, i) => i !== optIndex);
+      let newCorrectIndex = prev.correctIndex || 0;
+      if (optIndex === newCorrectIndex) {
+        newCorrectIndex = 0;
+      } else if (optIndex < newCorrectIndex) {
+        newCorrectIndex = newCorrectIndex - 1;
+      }
+      return { ...prev, options: newOptions, correctIndex: newCorrectIndex };
+    });
+  }, []);
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
@@ -589,12 +667,17 @@ export default function TeacherPage() {
           </div>
         </div>
       ) : (
-        /* Generated exercises preview */
+        /* Generated exercises preview — with inline editing */
         <div className="slide-in">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-            <h2>✅ Đã tạo {generatedQuestions.length} bài tập</h2>
-            <div style={{ display: 'flex', gap: '0.75rem' }}>
-              <button className="btn btn-secondary" onClick={() => setGeneratedQuestions(null)}>
+          <div className="generated-header">
+            <div className="generated-header-left">
+              <h2>✅ Đã tạo {generatedQuestions.length} câu hỏi</h2>
+              <p className="generated-header-hint">
+                Nhấn ✏️ để chỉnh sửa hoặc 🗑️ để xóa từng câu
+              </p>
+            </div>
+            <div className="generated-header-actions">
+              <button className="btn btn-secondary" onClick={() => { setGeneratedQuestions(null); cancelEditQuestion(); }}>
                 ← Quay lại
               </button>
               <button className="btn btn-success btn-lg" onClick={handleSaveExercise}>
@@ -605,54 +688,252 @@ export default function TeacherPage() {
 
           <div className="generated-questions">
             {generatedQuestions.map((q, i) => (
-              <div key={i} className="generated-question-item">
-                <div className="q-number">
-                  Câu {i + 1} — {TYPE_LABELS[q.type] || '📝 ' + q.type}
+              <div key={i} className={`generated-question-item ${editingIndex === i ? 'editing' : ''}`}>
+                {/* Header with question number + action buttons */}
+                <div className="q-header">
+                  <div className="q-number">
+                    Câu {i + 1} — {TYPE_LABELS[q.type] || '📝 ' + q.type}
+                  </div>
+                  <div className="q-actions">
+                    {editingIndex === i ? (
+                      <>
+                        <button className="q-action-btn q-action-save" onClick={saveEditQuestion} title="Lưu">
+                          ✅ Lưu
+                        </button>
+                        <button className="q-action-btn q-action-cancel" onClick={cancelEditQuestion} title="Hủy">
+                          ✕ Hủy
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button className="q-action-btn q-action-edit" onClick={() => startEditQuestion(i)} title="Chỉnh sửa">
+                          ✏️
+                        </button>
+                        <button className="q-action-btn q-action-delete" onClick={() => deleteQuestion(i)} title="Xóa">
+                          🗑️
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-                {q.instruction && (
-                  <p className="q-instruction">{q.instruction}</p>
-                )}
-                <p className="q-text">{q.question}</p>
 
-                {q.type === 'multiple_choice' && q.options && (
-                  <div className="q-options">
-                    {q.options.map((opt, j) => (
-                      <div key={j} className={`q-option ${j === q.correctIndex ? 'q-correct' : ''}`}>
-                        {['A', 'B', 'C', 'D'][j]}. {opt}
-                        {j === q.correctIndex && ' ✓'}
+                {editingIndex === i && editForm ? (
+                  /* ===== EDITING MODE ===== */
+                  <div className="q-edit-form fade-in">
+                    {/* Type selector */}
+                    <div className="q-edit-group">
+                      <label className="q-edit-label">Loại câu hỏi</label>
+                      <select
+                        className="form-select q-edit-select"
+                        value={editForm.type}
+                        onChange={(e) => updateEditField('type', e.target.value)}
+                      >
+                        {TYPE_OPTIONS.map((t) => (
+                          <option key={t.value} value={t.value}>{t.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Instruction */}
+                    <div className="q-edit-group">
+                      <label className="q-edit-label">Hướng dẫn (instruction)</label>
+                      <input
+                        className="form-input q-edit-input"
+                        value={editForm.instruction || ''}
+                        onChange={(e) => updateEditField('instruction', e.target.value)}
+                        placeholder="VD: Write sentences using the prompts"
+                      />
+                    </div>
+
+                    {/* Question text */}
+                    <div className="q-edit-group">
+                      <label className="q-edit-label">Câu hỏi / Nội dung *</label>
+                      <textarea
+                        className="form-textarea q-edit-textarea"
+                        value={editForm.question || ''}
+                        onChange={(e) => updateEditField('question', e.target.value)}
+                        rows={2}
+                        placeholder="Nhập nội dung câu hỏi..."
+                      />
+                    </div>
+
+                    {/* Multiple choice options */}
+                    {editForm.type === 'multiple_choice' && editForm.options && (
+                      <div className="q-edit-group">
+                        <div className="q-edit-label-row">
+                          <label className="q-edit-label">Các đáp án ({editForm.options.length})</label>
+                          <div className="q-edit-option-actions">
+                            {editForm.options.length > 2 && (
+                              <button
+                                className="q-action-btn q-action-delete"
+                                onClick={() => removeEditOption(editForm.options.length - 1)}
+                                title="Xóa đáp án cuối"
+                              >
+                                − Bớt
+                              </button>
+                            )}
+                            {editForm.options.length < 6 && (
+                              <button
+                                className="q-action-btn q-action-edit"
+                                onClick={addEditOption}
+                                title="Thêm đáp án"
+                              >
+                                + Thêm
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {editForm.options.map((opt, j) => (
+                          <div key={j} className="q-edit-option-row">
+                            <span className={`q-edit-option-letter ${j === editForm.correctIndex ? 'correct' : ''}`}>
+                              {String.fromCharCode(65 + j)}
+                            </span>
+                            <input
+                              className="form-input q-edit-input"
+                              value={opt}
+                              onChange={(e) => updateEditOption(j, e.target.value)}
+                            />
+                            <button
+                              className={`q-edit-correct-btn ${j === editForm.correctIndex ? 'active' : ''}`}
+                              onClick={() => updateEditField('correctIndex', j)}
+                              title="Đặt làm đáp án đúng"
+                            >
+                              {j === editForm.correctIndex ? '✓ Đúng' : 'Chọn'}
+                            </button>
+                            {editForm.options.length > 2 && (
+                              <button
+                                className="q-edit-remove-opt-btn"
+                                onClick={() => removeEditOption(j)}
+                                title="Xóa đáp án này"
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                )}
+                    )}
 
-                {q.type === 'matching' && q.columnA && (
-                  <div className="q-matching">
-                    <div className="q-matching-col">
-                      <strong>Cột A:</strong>
-                      {q.columnA.map((item, j) => <div key={j}>{j + 1}. {item}</div>)}
+                    {/* Matching columns */}
+                    {editForm.type === 'matching' && editForm.columnA && (
+                      <div className="q-edit-group">
+                        <label className="q-edit-label">Cột nối</label>
+                        <div className="q-edit-matching-grid">
+                          <div>
+                            <span className="q-edit-col-label">Cột A</span>
+                            {editForm.columnA.map((item, j) => (
+                              <div key={j} className="q-edit-matching-row">
+                                <span className="q-edit-match-num">{j + 1}.</span>
+                                <input
+                                  className="form-input q-edit-input"
+                                  value={item}
+                                  onChange={(e) => updateEditColumnItem('columnA', j, e.target.value)}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                          <div>
+                            <span className="q-edit-col-label">Cột B</span>
+                            {editForm.columnB.map((item, j) => (
+                              <div key={j} className="q-edit-matching-row">
+                                <span className="q-edit-match-num">{String.fromCharCode(97 + j)}.</span>
+                                <input
+                                  className="form-input q-edit-input"
+                                  value={item}
+                                  onChange={(e) => updateEditColumnItem('columnB', j, e.target.value)}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Sample answer */}
+                    <div className="q-edit-group">
+                      <label className="q-edit-label">Đáp án mẫu</label>
+                      <input
+                        className="form-input q-edit-input"
+                        value={editForm.sampleAnswer || ''}
+                        onChange={(e) => updateEditField('sampleAnswer', e.target.value)}
+                        placeholder="Nhập đáp án mẫu..."
+                      />
                     </div>
-                    <div className="q-matching-col">
-                      <strong>Cột B:</strong>
-                      {q.columnB.map((item, j) => <div key={j}>{String.fromCharCode(97 + j)}. {item}</div>)}
+
+                    {/* Hints */}
+                    <div className="q-edit-group">
+                      <label className="q-edit-label">Gợi ý</label>
+                      <input
+                        className="form-input q-edit-input"
+                        value={editForm.hints || ''}
+                        onChange={(e) => updateEditField('hints', e.target.value)}
+                        placeholder="Gợi ý cho học sinh..."
+                      />
+                    </div>
+
+                    {/* Explanation */}
+                    <div className="q-edit-group">
+                      <label className="q-edit-label">Giải thích</label>
+                      <textarea
+                        className="form-textarea q-edit-textarea"
+                        value={editForm.explanation || ''}
+                        onChange={(e) => updateEditField('explanation', e.target.value)}
+                        rows={2}
+                        placeholder="Giải thích đáp án..."
+                      />
                     </div>
                   </div>
-                )}
+                ) : (
+                  /* ===== VIEW MODE ===== */
+                  <div className="q-view-content" onDoubleClick={() => startEditQuestion(i)}>
+                    {q.instruction && (
+                      <p className="q-instruction">{q.instruction}</p>
+                    )}
+                    <p className="q-text">{q.question}</p>
 
-                {q.sampleAnswer && (
-                  <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-                    <p><strong style={{ color: 'var(--accent-emerald)' }}>Đáp án mẫu:</strong> {q.sampleAnswer}</p>
-                  </div>
-                )}
+                    {q.type === 'multiple_choice' && q.options && (
+                      <div className="q-options">
+                        {q.options.map((opt, j) => (
+                          <div key={j} className={`q-option ${j === q.correctIndex ? 'q-correct' : ''}`}>
+                            {String.fromCharCode(65 + j)}. {opt}
+                            {j === q.correctIndex && ' ✓'}
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
-                {q.hints && (
-                  <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: '0.375rem', fontStyle: 'italic' }}>
-                    💡 {q.hints}
-                  </div>
-                )}
+                    {q.type === 'matching' && q.columnA && (
+                      <div className="q-matching">
+                        <div className="q-matching-col">
+                          <strong>Cột A:</strong>
+                          {q.columnA.map((item, j) => <div key={j}>{j + 1}. {item}</div>)}
+                        </div>
+                        <div className="q-matching-col">
+                          <strong>Cột B:</strong>
+                          {q.columnB.map((item, j) => <div key={j}>{String.fromCharCode(97 + j)}. {item}</div>)}
+                        </div>
+                      </div>
+                    )}
 
-                {q.explanation && (
-                  <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: '0.375rem', fontStyle: 'italic' }}>
-                    💡 {q.explanation}
+                    {q.sampleAnswer && (
+                      <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                        <p><strong style={{ color: 'var(--accent-emerald)' }}>Đáp án mẫu:</strong> {q.sampleAnswer}</p>
+                      </div>
+                    )}
+
+                    {q.hints && (
+                      <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: '0.375rem', fontStyle: 'italic' }}>
+                        💡 {q.hints}
+                      </div>
+                    )}
+
+                    {q.explanation && (
+                      <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: '0.375rem', fontStyle: 'italic' }}>
+                        💡 {q.explanation}
+                      </div>
+                    )}
+
+                    <p className="q-edit-hint">Double-click để chỉnh sửa nhanh</p>
                   </div>
                 )}
               </div>

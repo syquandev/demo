@@ -147,7 +147,7 @@ export default function ExercisePage() {
               {q.type === 'multiple_choice' ? (
                 <div className="question-options">
                   {q.options.map((opt, j) => {
-                    const letters = ['A', 'B', 'C', 'D'];
+                    const letter = String.fromCharCode(65 + j); // A, B, C, D...
                     const isSelected = answers[i] === j;
                     return (
                       <button
@@ -158,7 +158,7 @@ export default function ExercisePage() {
                           handleSelectOption(i, j);
                         }}
                       >
-                        <span className="option-letter">{letters[j]}</span>
+                        <span className="option-letter">{letter}</span>
                         <span>{opt}</span>
                       </button>
                     );
@@ -398,7 +398,7 @@ function ResultView({ exercise, questions, answers, result, navigate }) {
               {q.type === 'multiple_choice' && (
                 <div className="question-options">
                   {q.options.map((opt, j) => {
-                    const letters = ['A', 'B', 'C', 'D'];
+                    const letter = String.fromCharCode(65 + j); // A, B, C, D...
                     const isSelected = answers[i] === j;
                     const isCorrect = j === q.correctIndex;
                     let cls = '';
@@ -407,7 +407,7 @@ function ResultView({ exercise, questions, answers, result, navigate }) {
 
                     return (
                       <div key={j} className={`option-btn ${cls}`} style={{ cursor: 'default' }}>
-                        <span className="option-letter">{letters[j]}</span>
+                        <span className="option-letter">{letter}</span>
                         <span>{opt}</span>
                         {isCorrect && <span style={{ marginLeft: 'auto', fontSize: '0.8rem' }}>✓ Đáp án đúng</span>}
                       </div>

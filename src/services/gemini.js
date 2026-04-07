@@ -114,14 +114,14 @@ export async function generateExercises(content, difficulty = 'Trung bình') {
     "type": "multiple_choice",
     "instruction": "Chọn đáp án đúng",
     "question": "Câu hỏi?",
-    "options": ["A", "B", "C", "D"],
+    "options": ["Đáp án A", "Đáp án B"],
     "correctIndex": 0,
     "explanation": "Giải thích"
   }
 ]
 
 **Mỗi câu BẮT BUỘC có:** type, instruction, question, sampleAnswer
-**Riêng multiple_choice thêm:** options (4 đáp án), correctIndex (0-3), explanation
+**Riêng multiple_choice thêm:** options (mảng 2 đến 4 đáp án, mặc định 2 đáp án nếu phù hợp), correctIndex (chỉ số đáp án đúng, bắt đầu từ 0), explanation
 **Riêng matching thêm:** columnA, columnB, correctPairs
 
 **Nội dung bài học (TẠO BÀI TẬP CHO TỪNG CÂU BÊN DƯỚI, KHÔNG BỎ SÓT):**
