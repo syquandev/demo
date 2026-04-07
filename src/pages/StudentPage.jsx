@@ -40,7 +40,7 @@ export default function StudentPage() {
               </div>
               <p className="card-desc">{ex.description}</p>
               <div className="card-meta">
-                <span>📚 {ex.subject}</span>
+                <span>🏫 {ex.grade || ex.subject || 'Chung'}</span>
                 <span>📋 {ex.questionCount} câu</span>
                 <span className={`badge ${ex.difficulty === 'Dễ' ? 'badge-emerald' : ex.difficulty === 'Trung bình' ? 'badge-amber' : 'badge-rose'}`}>
                   {ex.difficulty}

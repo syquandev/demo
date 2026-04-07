@@ -1,8 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { useApp } from '../context/AppContext';
 import { gradeExercise } from '../services/gemini';
+
+// Exercise type labels
+const TYPE_LABELS = {
+  write_sentence: '✏️ Viết câu',
+  fill_blank: '📝 Điền từ',
+  rewrite: '🔄 Viết lại câu',
+  multiple_choice: '🔘 Trắc nghiệm',
+  matching: '🔗 Nối',
+  ordering: '🔢 Sắp xếp',
+  short_answer: '💬 Trả lời ngắn',
+  translation: '🌐 Dịch',
+};
 
 export default function ExercisePage() {
   const { exerciseId } = useParams();
@@ -42,7 +54,7 @@ export default function ExercisePage() {
     setAnswers((prev) => ({ ...prev, [qIndex]: optionIndex }));
   };
 
-  const handleEssayChange = (qIndex, text) => {
+  const handleTextChange = (qIndex, text) => {
     if (submitted) return;
     setAnswers((prev) => ({ ...prev, [qIndex]: text }));
   };
@@ -55,10 +67,7 @@ export default function ExercisePage() {
 
     setSubmitted(true);
 
-    // Check if there are essay questions and API key is available
-    const hasEssay = questions.some((q) => q.type === 'essay');
-
-    if (hasEssay && apiKey) {
+    if (apiKey) {
       setGrading(true);
       try {
         const aiResult = await gradeExercise(questions, answers);
@@ -67,21 +76,15 @@ export default function ExercisePage() {
         showToast('AI đã chấm điểm xong!', 'success');
       } catch (err) {
         console.error(err);
-        // Fallback: grade multiple choice only
         const fallback = gradeLocally(questions, answers);
         setResult(fallback);
         saveResult(exerciseId, fallback);
-        showToast('Lỗi AI, đã chấm trắc nghiệm tự động.', 'error');
+        showToast('Lỗi AI chấm điểm, đã chấm phần trắc nghiệm.', 'error');
       }
       setGrading(false);
     } else {
-      // Grade multiple choice locally
       const localResult = gradeLocally(questions, answers);
-
-      if (hasEssay && !apiKey) {
-        localResult.overallComment += '\n\n⚠️ Câu hỏi tự luận chưa được chấm vì chưa nhập API Key Gemini.';
-      }
-
+      localResult.overallComment += '\n\n⚠️ Nhập API Key Gemini để AI chấm điểm chi tiết hơn.';
       setResult(localResult);
       saveResult(exerciseId, localResult);
       showToast('Đã chấm điểm xong!', 'success');
@@ -123,9 +126,24 @@ export default function ExercisePage() {
         <div>
           {questions.map((q, i) => (
             <div key={i} className={`question-card ${currentQ === i ? 'active' : ''}`} onClick={() => setCurrentQ(i)}>
-              <div className="question-number">Câu {i + 1} / {totalQ}</div>
+              <div className="question-number">
+                Câu {i + 1} / {totalQ} — {TYPE_LABELS[q.type] || q.type}
+              </div>
+
+              {/* Instruction */}
+              {q.instruction && (
+                <p className="question-instruction">{q.instruction}</p>
+              )}
+
+              {/* Question text */}
               <p className="question-text">{q.question}</p>
 
+              {/* Hints */}
+              {q.hints && (
+                <p className="question-hint">💡 Gợi ý: {q.hints}</p>
+              )}
+
+              {/* Multiple choice */}
               {q.type === 'multiple_choice' ? (
                 <div className="question-options">
                   {q.options.map((opt, j) => {
@@ -146,12 +164,38 @@ export default function ExercisePage() {
                     );
                   })}
                 </div>
+              ) : q.type === 'matching' ? (
+                /* Matching exercise */
+                <div className="matching-exercise" onClick={(e) => e.stopPropagation()}>
+                  <div className="matching-columns">
+                    <div className="matching-col">
+                      <strong style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>Cột A</strong>
+                      {q.columnA?.map((item, j) => (
+                        <div key={j} className="matching-item">{j + 1}. {item}</div>
+                      ))}
+                    </div>
+                    <div className="matching-col">
+                      <strong style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>Cột B</strong>
+                      {q.columnB?.map((item, j) => (
+                        <div key={j} className="matching-item">{String.fromCharCode(97 + j)}. {item}</div>
+                      ))}
+                    </div>
+                  </div>
+                  <textarea
+                    className="answer-textarea"
+                    placeholder="Nhập đáp án nối, ví dụ: 1-c, 2-a, 3-b"
+                    value={answers[i] || ''}
+                    onChange={(e) => handleTextChange(i, e.target.value)}
+                    style={{ minHeight: '60px', marginTop: '0.75rem' }}
+                  />
+                </div>
               ) : (
+                /* All other text-input types */
                 <textarea
                   className="answer-textarea"
-                  placeholder="Viết câu trả lời của bạn ở đây..."
+                  placeholder={getPlaceholder(q.type)}
                   value={answers[i] || ''}
-                  onChange={(e) => handleEssayChange(i, e.target.value)}
+                  onChange={(e) => handleTextChange(i, e.target.value)}
                   onClick={(e) => e.stopPropagation()}
                 />
               )}
@@ -204,41 +248,62 @@ export default function ExercisePage() {
   );
 }
 
-/* ========== Local grading (multiple choice only) ========== */
+/* ========== Helper: Placeholder text by type ========== */
+function getPlaceholder(type) {
+  switch (type) {
+    case 'write_sentence': return 'Viết câu hoàn chỉnh ở đây...';
+    case 'fill_blank': return 'Điền từ/cụm từ vào chỗ trống...';
+    case 'rewrite': return 'Viết lại câu ở đây...';
+    case 'ordering': return 'Sắp xếp thành câu hoàn chỉnh...';
+    case 'short_answer': return 'Viết câu trả lời ngắn ở đây...';
+    case 'translation': return 'Viết bản dịch ở đây...';
+    default: return 'Viết câu trả lời của bạn ở đây...';
+  }
+}
+
+/* ========== Local grading (MCQ only, others need AI) ========== */
 function gradeLocally(questions, answers) {
   let correct = 0;
+  let mcCount = 0;
   const feedback = [];
 
   questions.forEach((q, i) => {
     if (q.type === 'multiple_choice') {
+      mcCount++;
       const isCorrect = answers[i] === q.correctIndex;
       if (isCorrect) correct++;
       feedback.push({
         questionIndex: i,
         score: isCorrect ? 1 : 0,
         maxScore: 1,
-        feedback: isCorrect ? 'Chính xác! ' + (q.explanation || '') : `Sai. Đáp án đúng: ${q.options[q.correctIndex]}. ${q.explanation || ''}`,
+        feedback: isCorrect
+          ? 'Chính xác! ' + (q.explanation || '')
+          : `Sai. Đáp án đúng: ${q.options[q.correctIndex]}. ${q.explanation || ''}`,
       });
     } else {
       feedback.push({
         questionIndex: i,
         score: 0,
         maxScore: 1,
-        feedback: 'Câu tự luận cần AI chấm điểm.',
+        feedback: 'Cần AI chấm điểm cho loại bài này. Vui lòng nhập API Key.',
+        correctedAnswer: q.sampleAnswer || '',
       });
     }
   });
 
-  const mcCount = questions.filter((q) => q.type === 'multiple_choice').length;
-  const totalScore = Math.round((correct / questions.length) * 10 * 10) / 10;
+  const totalScore = mcCount > 0
+    ? Math.round((correct / questions.length) * 10 * 10) / 10
+    : 0;
 
   return {
     totalScore,
     maxScore: 10,
-    overallComment: `Bạn trả lời đúng ${correct}/${mcCount} câu trắc nghiệm.`,
+    overallComment: mcCount > 0
+      ? `Bạn trả lời đúng ${correct}/${mcCount} câu trắc nghiệm.`
+      : 'Bài tập này cần AI chấm điểm.',
     strengths: correct > mcCount / 2 ? ['Nắm tốt kiến thức cơ bản'] : [],
-    weaknesses: correct <= mcCount / 2 ? ['Cần ôn lại kiến thức'] : [],
-    suggestions: ['Đọc kỹ lý thuyết trước khi làm bài', 'Chú ý các chi tiết quan trọng'],
+    weaknesses: correct <= mcCount / 2 && mcCount > 0 ? ['Cần ôn lại kiến thức'] : [],
+    suggestions: ['Nhập API Key để AI chấm chi tiết tất cả các loại bài'],
     questionFeedback: feedback,
   };
 }
@@ -315,15 +380,21 @@ function ResultView({ exercise, questions, answers, result, navigate }) {
           return (
             <div key={i} className="question-card" style={{ marginBottom: '1rem' }}>
               <div className="question-number" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Câu {i + 1}</span>
+                <span>Câu {i + 1} — {TYPE_LABELS[q.type] || q.type}</span>
                 {fb && (
-                  <span className={`badge ${fb.score >= fb.maxScore ? 'badge-emerald' : 'badge-rose'}`}>
+                  <span className={`badge ${fb.score >= fb.maxScore ? 'badge-emerald' : fb.score > 0 ? 'badge-amber' : 'badge-rose'}`}>
                     {fb.score}/{fb.maxScore} điểm
                   </span>
                 )}
               </div>
+
+              {q.instruction && (
+                <p className="question-instruction">{q.instruction}</p>
+              )}
+
               <p className="question-text">{q.question}</p>
 
+              {/* MCQ review */}
               {q.type === 'multiple_choice' && (
                 <div className="question-options">
                   {q.options.map((opt, j) => {
@@ -345,12 +416,23 @@ function ResultView({ exercise, questions, answers, result, navigate }) {
                 </div>
               )}
 
-              {q.type === 'essay' && (
-                <div style={{ marginBottom: '0.75rem' }}>
+              {/* Text-based answer review */}
+              {q.type !== 'multiple_choice' && (
+                <div style={{ marginTop: '0.5rem' }}>
                   <p style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', marginBottom: '0.25rem' }}>Bài làm của bạn:</p>
                   <div style={{ padding: '0.75rem', background: 'var(--bg-glass)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', fontSize: '0.9375rem' }}>
                     {answers[i] || <em style={{ color: 'var(--text-muted)' }}>Không trả lời</em>}
                   </div>
+
+                  {/* Show correct answer */}
+                  {(fb?.correctedAnswer || q.sampleAnswer) && (
+                    <div style={{ marginTop: '0.5rem' }}>
+                      <p style={{ color: 'var(--accent-emerald)', fontSize: '0.8125rem', marginBottom: '0.25rem' }}>✅ Đáp án mẫu:</p>
+                      <div style={{ padding: '0.75rem', background: 'rgba(16, 185, 129, 0.06)', borderRadius: 'var(--radius-sm)', color: 'var(--accent-emerald)', fontSize: '0.9375rem', border: '1px solid rgba(16, 185, 129, 0.15)' }}>
+                        {fb?.correctedAnswer || q.sampleAnswer}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
