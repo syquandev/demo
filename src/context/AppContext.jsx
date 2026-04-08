@@ -3,20 +3,18 @@ import { initGemini, isGeminiReady } from '../services/gemini';
 
 const AppContext = createContext(null);
 
+const GEMINI_API_KEY = 'AIzaSyCU06yk0rmqn39jZiF2Pw6_KsOJT3XCxkg';
+
 export function AppProvider({ children }) {
   const [role, setRole] = useState(null); // 'student' | 'teacher' | null
-  const [apiKey, setApiKey] = useState('');
+  const [apiKey, setApiKey] = useState(GEMINI_API_KEY);
   const [exercises, setExercises] = useState([]);
   const [completedExercises, setCompletedExercises] = useState({});
   const [toast, setToast] = useState(null);
 
-  // Load API key from localStorage
+  // Auto-initialize Gemini with hardcoded key
   useEffect(() => {
-    const saved = localStorage.getItem('gemini_api_key');
-    if (saved) {
-      setApiKey(saved);
-      initGemini(saved);
-    }
+    initGemini(GEMINI_API_KEY);
 
     // Load saved exercises from localStorage
     const savedExercises = localStorage.getItem('eduai_exercises');
