@@ -4,20 +4,18 @@ import { initGemini, isGeminiReady } from '../services/gemini';
 const AppContext = createContext(null);
 
 export function AppProvider({ children }) {
-  const [role, setRole] = useState(null); // 'student' | 'teacher' | null
+  const [role, setRole] = useState(null); // 'student' | 'teacher'
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
   const [exercises, setExercises] = useState([]);
   const [completedExercises, setCompletedExercises] = useState({});
   const [toast, setToast] = useState(null);
 
-  // Initialize Gemini with saved key (if exists)
   useEffect(() => {
     const savedKey = localStorage.getItem('gemini_api_key');
     if (savedKey) {
       initGemini(savedKey);
     }
 
-    // Load saved exercises from localStorage
     const savedExercises = localStorage.getItem('eduai_exercises');
     if (savedExercises) {
       try {
@@ -28,7 +26,6 @@ export function AppProvider({ children }) {
     }
   }, []);
 
-  // Save exercises to localStorage whenever they change
   useEffect(() => {
     localStorage.setItem('eduai_exercises', JSON.stringify(exercises));
   }, [exercises]);
